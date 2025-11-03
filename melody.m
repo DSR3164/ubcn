@@ -54,7 +54,12 @@ chords2 = { % Имперский марш
 
 
 music = chords2;
-time = note_time;
+if isequal(music, chords)
+    time = chord_time;
+else
+    time = note_time;
+end
+
 
 signal = [];
 for k = 1:length(music)
@@ -74,7 +79,7 @@ for k = 1:length(music)
 end
 
 signal = signal / max(abs(signal));
-figure;
+figure('Position', [(1920-1920)/2, (1080-400)/2, 1920, 400]);
 t = (0:length(signal)-1)/(Fs);
 plot(t, signal);
 
@@ -82,4 +87,4 @@ disp(length(signal)/Fs)
 
 player = audioplayer(signal, Fs);
 play(player);
-audiowrite('melody2.wav', signal, Fs);
+% audiowrite('melody2.wav', signal, Fs);
