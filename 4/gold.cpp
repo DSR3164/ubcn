@@ -9,11 +9,11 @@
 
 using namespace std;
 
-int gold(int x, int y, vector<int> &out_list)
+int gold(int N, int x, int y, vector<int> &out_list)
 {
     int tempx, tempy;
     int out;
-    for (int i = 0; i < 31; ++i)
+    for (int i = 0; i < N; ++i)
     {
         tempx = ((x & 0x2) >> 1) ^ (x & 0x1);
         x = (tempx << 4) | (x >> 1);
@@ -35,7 +35,7 @@ double auto_correlation(vector<int> &a, vector<int> &b)
     double out;
     for (int i = 0; i < (int)a.size(); ++i)
         acc += (double)(a[i] ^ b[i]);
-    out = (((double)a.size() - acc) - acc) / 31;
+    out = (((double)a.size() - acc) - acc) / (double)a.size();
     return out;
 }
 
@@ -58,10 +58,70 @@ double correlation(vector<int> &a, vector<int> &b)
         acc2 += b[i] * b[i];
     }
     for (auto &v : a)
-        v = (v + 1)/2;
+        v = (v + 1) / 2;
     for (auto &v : b)
-        v = (v + 1)/2;
+        v = (v + 1) / 2;
     return (acc / sqrt(acc1 * acc2));
+}
+
+int check_sequence(vector<int> &out)
+{
+    const int N = out.size();
+
+    // Баланс
+    int ones = count(out.begin(), out.end(), 1);
+    int zeros = N - ones;
+    cout << "Нулей: " << zeros << "\nЕдиниц: " << ones << endl;
+    if (abs(ones - zeros) > 1)
+    {
+        cout << "1 условие неудовлетворено\n";
+        return -1;
+    }
+
+    // Проверка циклов
+    vector<int> runs;
+    int len = 1;
+    for (int i = 1; i < N; ++i)
+    {
+        if (out[i] == out[i - 1])
+            len++;
+        else
+        {
+            runs.push_back(len);
+            len = 1;
+        }
+    }
+    runs.push_back(len);
+    int total_runs = runs.size();
+
+    for (int k = 1; k <= 4; ++k)
+    {
+        int cnt = count(runs.begin(), runs.end(), k);
+        double ratio = (double)cnt / total_runs;
+        double expected = 1.0 / pow(2.0, k);
+        cout << cnt << " последовательностей длиной " << k << endl;
+        if (fabs(ratio - expected) > 0.15 * expected)
+        {
+            cout << "2 условие неудовлетворено\n";
+            return -2;
+        }
+    }
+
+    // Корреляция
+    for (int s = N - 1; s > 1; --s)
+    {
+        vector<int> shifted(out);
+        rotate(shifted.begin(), shifted.begin() + s, shifted.end());
+        double r = auto_correlation(out, shifted);
+        if (fabs(r) > 0.3)
+        {
+            cout << "3 условие неудовлетворено на сдвиге " << s << " при корр = " << r << endl;
+            return -3;
+        }
+    }
+
+    cout << "Последовательность соответствует требованиям\n";
+    return 0;
 }
 
 int main()
@@ -71,11 +131,12 @@ int main()
     int x2 = (VAR + 1) & 0x1f;
     int y2 = (x2 + 7 - 5) & 0x1f;
     int shift;
+    int N = 31;
     vector<int> out;
     vector<int> out2;
-    gold(x, y, out);
+    gold(N, x, y, out);
+    check_sequence(out);
     vector<double> norm_corr;
-
     for (size_t i = 0; i < out.size(); ++i)
     {
         if (i == 0)
@@ -100,13 +161,10 @@ int main()
         }
         cout << fixed << setprecision(3) << "\t" << norm_corr[i] << endl;
     }
-
-    gold(x2, y2, out2);
-
+    gold(N, x2, y2, out2);
     cout << "\nx=x+1; y=y-5:\n"
          << "Взаимная корреляция: "
          << correlation(out, out2) << endl;
-    for (auto &n: out)
-        cout << n << "  ";
+    check_sequence(out2);
     return 0;
 }
