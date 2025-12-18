@@ -2,8 +2,8 @@
 VAR = 16;
 N = 31;
 
-x = bitand(VAR, 31);
-y = bitand(x + 7, 31);
+x = bitand(VAR + 1, 31);
+y = bitand(x + 7 - 5, 31);
 
 %% 1. Генерация последовательности Голда
 seq = zeros(1,N);

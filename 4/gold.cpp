@@ -3,6 +3,7 @@
 #include <iostream>
 #include <iomanip>
 #include <vector>
+#include <random>
 #include <cmath>
 
 #define VAR 16
@@ -126,6 +127,12 @@ int check_sequence(vector<int> &out)
 
 int main()
 {
+    vector<int> gen;
+    int len = 511;
+    for (int i = 0; i < len; ++i)
+        gen.push_back(rand() % 2);
+    check_sequence(gen);
+    cout << "\nГолда:" << endl;
     int x = VAR & 0x1f;
     int y = (x + 7) & 0x1f;
     int x2 = (VAR + 1) & 0x1f;
@@ -156,9 +163,7 @@ int main()
         norm_corr.push_back(auto_correlation(out, shifted));
         cout << i << "\t";
         for (size_t h = 0; h < out.size(); ++h)
-        {
             cout << shifted[h] << (h > 8 ? "   " : "  ");
-        }
         cout << fixed << setprecision(3) << "\t" << norm_corr[i] << endl;
     }
     gold(N, x2, y2, out2);
