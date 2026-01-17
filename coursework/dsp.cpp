@@ -184,12 +184,11 @@ py::array_t<double> sync_rx(py::array_t<double> rx_signal, py::array_t<double> g
     return arr;
 }
 
-std::vector<int> samples_to_bits(py::array_t<double> &rx, int N, int total_bits, double P = 0.5)
+std::vector<int> samples_to_bits(py::array_t<double> &rx, int N, double P = 0.5)
 {
     std::vector<int> bits;
-    bits.reserve(total_bits);
     auto buf = rx.unchecked<1>();
-    int max_samples = total_bits * N;
+    int max_samples = buf.size();
 
     for (int i = 0; i < max_samples; i += N)
     {
@@ -224,7 +223,7 @@ bool check_crc(const std::vector<int> &packet, const std::vector<int> &poly)
     return true;
 }
 
-py::array_t<double> create_signal_with_start(py::array_t<double> tx_signal, int start)
+py::array_t<double> create_signal_with_start(py::array_t<double> tx_signal, int start, bool print_stats = false)
 {
     ssize_t tx_len = tx_signal.size();
     ssize_t signal_len = tx_len * 2;
@@ -238,12 +237,14 @@ py::array_t<double> create_signal_with_start(py::array_t<double> tx_signal, int 
     if (start < 0)
     {
         start = 0;
-        std::cout << "Start index adjusted to 0" << std::endl;
+        if (print_stats)
+            std::cout << "Start index adjusted to 0" << std::endl;
     }
     else if (start + tx_len > signal_len)
     {
         start = signal_len - tx_len;
-        std::cout << "Start index adjusted to " << start << std::endl;
+        if (print_stats)
+            std::cout << "Start index adjusted to " << start << std::endl;
     }
 
     auto tx_buf = tx_signal.unchecked<1>();
@@ -251,6 +252,16 @@ py::array_t<double> create_signal_with_start(py::array_t<double> tx_signal, int 
         sig_buf(i + start) = tx_buf(i);
 
     return signal;
+}
+
+int find_packet_len(std::vector<int> &bits, int payload_Length)
+{
+    int len = 0;
+    for (int i = 0; i < payload_Length; ++i)
+    {
+        len = (len << 1) | bits[i];
+    }
+    return len;
 }
 
 py::dict one_run(int N = 50, int fs = 1000, float sigma = 0.5, int start = 2000, bool print_stats = true)
@@ -273,7 +284,7 @@ py::dict one_run(int N = 50, int fs = 1000, float sigma = 0.5, int start = 2000,
     full_bits.insert(full_bits.end(), crc.begin(), crc.end());
 
     py::array_t<double> up_bits = bits_to_signal(full_bits, N);
-    py::array_t<double> signal = create_signal_with_start(up_bits, start);
+    py::array_t<double> signal = create_signal_with_start(up_bits, start, print_stats);
     py::array_t<double> rx_signal = add_noise(signal, sigma);
 
     ssize_t H = signal.size();
@@ -297,10 +308,12 @@ py::dict one_run(int N = 50, int fs = 1000, float sigma = 0.5, int start = 2000,
     }
 
     py::array_t<double> start_from_gold = sync_rx(rx_signal, long_gold, gold.size() * N);
-    std::vector<int> bits = samples_to_bits(start_from_gold, N, full_bits.size(), P);
+    std::vector<int> bits = samples_to_bits(start_from_gold, N, P);
 
     if (bits.size() > GOLD_LEN)
         bits.erase(bits.begin(), bits.begin() + GOLD_LEN);
+    if (bits.size() > (data_bits.size() + crc.size()))
+        bits.erase(bits.begin() + data_bits.size() + crc.size(), bits.end());
     if (print_stats)
         std::cout << "expected " << (data_bits.size() + crc.size())
                   << "\nbits received " << bits.size() << std::endl;
@@ -333,6 +346,91 @@ py::dict one_run(int N = 50, int fs = 1000, float sigma = 0.5, int start = 2000,
     return result;
 }
 
+void unknown_len(int N = 50, int fs = 1000, float sigma = 0.5, int start = 2000, bool print_stats = true)
+{
+    time_t seed = time(0);
+    srand(seed);
+    std::string TEXT = "Denis Shklyaev";
+
+    double P = 0.5;
+    std::vector<int> poly = {1, 0, 1, 0, 0, 1, 1, 1};
+    int PAYLOAD_LEN = 8;
+    int GOLD_LEN = 31;
+    int x0 = 0b10011;
+    int y0 = 0b10101;
+
+    int rand_len = (rand() % 50) + 20;
+
+    std::vector<int> data_bits(rand_len); // text_to_bits(TEXT);
+    std::vector<int> len_bits(PAYLOAD_LEN);
+    for (int i = 0; i < rand_len; ++i)
+        data_bits[i] = (rand() % 2);
+    for (int i = 0; i < PAYLOAD_LEN; ++i)
+        len_bits[PAYLOAD_LEN - 1 - i] = (rand_len >> i) & 1;
+
+    std::vector<int> crc = crc_bits(data_bits, poly);
+    std::vector<int> gold = gold_sequence(GOLD_LEN, x0, y0);
+    std::vector<int> full_bits;
+
+    full_bits.insert(full_bits.end(), gold.begin(), gold.end());
+    full_bits.insert(full_bits.end(), len_bits.begin(), len_bits.end());
+    full_bits.insert(full_bits.end(), data_bits.begin(), data_bits.end());
+    full_bits.insert(full_bits.end(), crc.begin(), crc.end());
+
+    py::array_t<double> up_bits = bits_to_signal(full_bits, N);
+    py::array_t<double> signal = create_signal_with_start(up_bits, start, print_stats);
+    py::array_t<double> rx_signal = add_noise(signal, sigma);
+
+    ssize_t H = signal.size();
+    ssize_t Nc = H / 2 + 1;
+    py::array_t<double> f_tx(Nc);
+    py::array_t<double> s_tx(Nc);
+    py::array_t<double> f_rx(Nc);
+    py::array_t<double> s_rx(Nc);
+
+    py::array_t<double> long_gold = bits_to_signal(gold, N);
+    auto long_gold_buf = long_gold.mutable_unchecked<1>();
+    if (long_gold_buf.size() < H)
+    {
+        py::array_t<double> tmp(H);
+        auto tmp_buf = tmp.mutable_unchecked<1>();
+        for (ssize_t i = 0; i < long_gold_buf.size(); ++i)
+            tmp_buf(i) = long_gold_buf(i);
+        for (ssize_t i = long_gold_buf.size(); i < H; ++i)
+            tmp_buf(i) = 0.0;
+        long_gold = tmp;
+    }
+
+    py::array_t<double> start_from_gold = sync_rx(rx_signal, long_gold, gold.size() * N);
+    std::vector<int> bits = samples_to_bits(start_from_gold, N, P);
+
+    if (bits.size() > GOLD_LEN)
+        bits.erase(bits.begin(), bits.begin() + GOLD_LEN);
+
+    int packet_len = find_packet_len(bits, PAYLOAD_LEN);
+    std::cout << "Total bits received without GOLD: " << bits.size() << std::endl;
+    std::cout << "Expected data bits length: \033[32m" << rand_len << "\033[0m and get \033[31m"
+              << packet_len << "\033[0m" << std::endl;
+
+    if (bits.size() > GOLD_LEN)
+        bits.erase(bits.begin(), bits.begin() + PAYLOAD_LEN);
+
+    if (bits.size() > (packet_len + crc.size()))
+        bits.erase(bits.begin() + packet_len + crc.size(), bits.end());
+
+    std::string text_received;
+    bool crc_ok = check_crc(bits, poly);
+    if (crc_ok && print_stats)
+    {
+        std::cout << "CRC check passed" << std::endl;
+        std::vector<int> data_received(bits.begin(), bits.end() - crc.size());
+        text_received = bits_to_text(data_received);
+        std::cout << "Received text: " << text_received << std::endl;
+    }
+    else if (print_stats)
+        std::cout << "CRC check failed" << std::endl;
+}
+
 PYBIND11_MODULE(dsp, m)
 {
     m.def("check_crc", &check_crc);
@@ -341,8 +439,10 @@ PYBIND11_MODULE(dsp, m)
     m.def("text_to_bits", &text_to_bits);
     m.def("bits_to_text", &bits_to_text);
     m.def("gold_sequence", &gold_sequence);
+    m.def("find_packet_len", &find_packet_len);
     m.def("samples_to_bits", &samples_to_bits);
     m.def("bits_to_signal", &bits_to_signal);
+    m.def("unknown_len", &unknown_len);
     m.def("add_noise", &add_noise);
     m.def("spectrum", &spectrum);
     m.def("one_run", &one_run);
