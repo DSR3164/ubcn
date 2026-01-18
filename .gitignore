@@ -1,0 +1,10 @@
+*
+!/**/
+!.gitignore
+!*.py
+!*.cpp
+!*.m
+!*.pdf
+!*.png
+!**/CMakeLists.txt
+build

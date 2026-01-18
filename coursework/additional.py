@@ -4,7 +4,7 @@ import build.dsp as dsp
 
 times:np.ndarray = np.zeros(1000, dtype=np.float64)
 
-dsp.unknown_len(50, 1000, 0.4, 2000, True)
+dsp.one_run(50, 1000, 0.4, 2000, True)
 
 for i in range(1000):
     t0 = time.perf_counter()
@@ -15,7 +15,7 @@ for i in range(1000):
 print(f"\nTotal: {np.sum(times)/1000:.2f} s")
 print(f"Mean: {np.mean(times):,.2f} ms")
 plt.figure()
-plt.semilogy(times)
+plt.plot(times)
 plt.title("Время выполнения")
 plt.xlabel("N")
 plt.ylabel("Время, мс")
